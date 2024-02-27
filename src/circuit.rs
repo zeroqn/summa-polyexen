@@ -41,6 +41,7 @@ pub struct SummaMSTChip {
 }
 
 impl SummaMSTChip {
+    #[allow(dead_code)]
     pub fn init_empty() -> Self {
         Self {
             current_hash: Fr::zero(),
