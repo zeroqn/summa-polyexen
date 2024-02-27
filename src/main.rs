@@ -23,6 +23,7 @@ use polyexen::{
 
 mod circuit;
 
+// Base on https://github.com/ed255/polyexen-demo/blob/main/src/bin/demo.rs
 fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
