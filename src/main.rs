@@ -326,6 +326,7 @@ struct ResolvedPoly {
 }
 
 struct DisplayPolysBaseTOML<'a> {
+    var_bounds: &'a Vec<(Cell, Bound)>,
     polys: &'a Vec<ResolvedPoly>,
     plaf: &'a Plaf,
 }
@@ -333,6 +334,7 @@ struct DisplayPolysBaseTOML<'a> {
 impl<'a> From<&'a AnalysisResult> for DisplayPolysBaseTOML<'a> {
     fn from(value: &'a AnalysisResult) -> Self {
         DisplayPolysBaseTOML {
+            var_bounds: &value.var_bounds,
             polys: &value.polys,
             plaf: &value.plaf,
         }
@@ -351,6 +353,19 @@ impl fmt::Display for DisplayPolysBaseTOML<'_> {
                 }
             )
         };
+
+        for (c, bound) in self.var_bounds {
+            writeln!(
+                f,
+                "[constraints.polys.vars.\"{}\"]",
+                CellDisplay {
+                    c,
+                    plaf: &self.plaf,
+                }
+            )?;
+            writeln!(f, "bound = {}", bound)?;
+        }
+        writeln!(f)?;
 
         for p in self.polys {
             writeln!(f, "[constraints.polys.\"{}\"]", p.name)?;
