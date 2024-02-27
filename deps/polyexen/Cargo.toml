@@ -20,9 +20,7 @@ lazy_static = "1.4"
 # halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", features = ["circuit-params"], tag = "v2023_04_20" }
 # halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", features = ["circuit-params"], rev = "d3746109d7d38be53afc8ddae8fdfaf1f02ad1d7" }
 # branch kilic:shuffle
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", features = ["circuit-params"], tag = "v0.3.0" }
+# halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", features = ["circuit-params"], tag = "v0.3.0" }
+halo2_proofs = { git = "https://github.com/summa-dev/halo2", commit= "8386d6e", features = ["circuit-params"] }
 log = "0.4.14"
 static_assertions = "1.1.0"
-
-# [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-# halo2_proofs = { path = "../halo2/halo2_proofs" }

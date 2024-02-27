@@ -215,6 +215,7 @@ where
 {
     type Config = MstInclusionConfig<N_CURRENCIES, N_BYTES>;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::init_empty()

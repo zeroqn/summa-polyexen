@@ -1,0 +1,14 @@
+[package]
+name = "summa-polyexen"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+num-bigint = { version = "0.4", features = [ "rand" ] }
+halo2_proofs = { git = "https://github.com/summa-dev/halo2", commit= "8386d6e" }
+polyexen = { path = "./deps/polyexen" }
+summa-solvency = { path = "./circuit/solvency/zk_prover" }
+log = "0.4.20"
+env_logger = "0.11.2"

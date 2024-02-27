@@ -109,6 +109,7 @@ impl<const N_BYTES: usize> CircuitBase for TestCircuit<N_BYTES> {}
 impl<const N_BYTES: usize> Circuit<Fp> for TestCircuit<N_BYTES> {
     type Config = TestConfig<N_BYTES>;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()

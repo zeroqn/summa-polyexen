@@ -1,6 +1,7 @@
 //! This crate contains the cryptogarphic primitives for implementing proof of solvency protocol.
 //! The tooling being used to generate the zkSNARKs is [Halo2 PSE Fork](https://github.com/privacy-scaling-explorations/halo2).
 
+#![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
 /// Zk circuit subcomponents aka chips.

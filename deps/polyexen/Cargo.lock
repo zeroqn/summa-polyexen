@@ -200,25 +200,25 @@ dependencies = [
 
 [[package]]
 name = "halo2_proofs"
-version = "0.3.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2?tag=v0.3.0#73408a140737d8336490452193b21f5a7a94e7de"
+version = "0.2.0"
+source = "git+https://github.com/summa-dev/halo2#8386d6e64fc33baccf626869123185890b8284dc"
 dependencies = [
  "blake2b_simd",
  "ff",
  "group",
  "halo2curves",
+ "maybe-rayon",
  "rand_chacha",
  "rand_core",
- "rayon",
  "sha3",
  "tracing",
 ]
 
 [[package]]
 name = "halo2curves"
-version = "0.6.0"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3675880dc0cc7cd468943266297198a28f88210ba60ca5e0e04d121edf86b46"
+checksum = "e6b1142bd1059aacde1b477e0c80c142910f1ceae67fc619311d6a17428007ab"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -226,12 +226,10 @@ dependencies = [
  "lazy_static",
  "num-bigint",
  "num-traits",
- "pairing",
  "pasta_curves",
  "paste",
  "rand",
  "rand_core",
- "rayon",
  "static_assertions",
  "subtle",
 ]
@@ -265,6 +263,16 @@ name = "log"
 version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
+
+[[package]]
+name = "maybe-rayon"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ea1f30cedd69f0a2954655f7188c6a834246d2bcf1e315e2ac40c4b24dc9519"
+dependencies = [
+ "cfg-if",
+ "rayon",
+]
 
 [[package]]
 name = "memchr"
@@ -330,15 +338,6 @@ name = "opaque-debug"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
-
-[[package]]
-name = "pairing"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81fec4625e73cf41ef4bb6846cafa6d44736525f442ba45e407c4a000a13996f"
-dependencies = [
- "group",
-]
 
 [[package]]
 name = "pasta_curves"
