@@ -121,10 +121,13 @@ fn do_circuit_analysis(k: u32, c: &impl Circuit<Fr>) -> AnalysisResult {
             for exp in &exps_lhs {
                 for var in exp.vars() {
                     let pointers = var_map.entry(var).or_insert(VarPointers::default());
-                    pointers.lookups.push(raw_lookups.len());
+                    pointers.lookups.push(raw_lookups.len()); // push lookup index
                 }
             }
-            raw_lookups.push((exps_lhs.clone(), lookup_num));
+            raw_lookups.push(ResolvedLookup {
+                name: name.clone(),
+                exprs_num: (exps_lhs.clone(), lookup_num),
+            });
             log::trace!("[");
             for (i, exp) in exps_lhs.iter().enumerate() {
                 if i != 0 {
@@ -258,7 +261,7 @@ fn do_circuit_analysis(k: u32, c: &impl Circuit<Fr>) -> AnalysisResult {
                 }
                 for lookup_index in &pointers.lookups {
                     let lookup = raw_lookups.get_mut(*lookup_index).unwrap();
-                    for exp in lookup.0.iter_mut() {
+                    for exp in lookup.exprs_num.0.iter_mut() {
                         exp.replace_var(cell, &Expr::Var((*cell_main).to_owned()));
                     }
                 }
@@ -296,7 +299,7 @@ impl<V: Var> ExprReplaceVar<V> for Expr<V> {
 
 struct AnalysisResult {
     polys: Vec<ResolvedPoly>,
-    lookups: Vec<(Vec<Expr<Cell>>, usize)>,
+    lookups: Vec<ResolvedLookup>,
     var_bounds: Vec<(Cell, Bound)>,
     plaf: Plaf,
 }
@@ -315,6 +318,11 @@ impl AnalysisResult {
         write!(base_file, "{}", PlafDisplayBaseTOML(&self.plaf))?;
         write!(fixed_file, "{}", PlafDisplayFixedCSV(&self.plaf))?;
         write!(polys_file, "{}", DisplayPolysBaseTOML::from(self))?;
+
+        if !self.lookups.is_empty() {
+            let mut lookups_file = File::create(format!("out/{}_lookups.toml", name))?;
+            write!(lookups_file, "{}", DisplayLookupsBaseTOML::from(self))?;
+        }
 
         Ok(())
     }
@@ -357,7 +365,7 @@ impl fmt::Display for DisplayPolysBaseTOML<'_> {
         for (c, bound) in self.var_bounds {
             writeln!(
                 f,
-                "[constraints.polys.vars.\"{}\"]",
+                "[constraints.resolved_polys.vars.\"{}\"]",
                 CellDisplay {
                     c,
                     plaf: &self.plaf,
@@ -368,7 +376,7 @@ impl fmt::Display for DisplayPolysBaseTOML<'_> {
         writeln!(f)?;
 
         for p in self.polys {
-            writeln!(f, "[constraints.polys.\"{}\"]", p.name)?;
+            writeln!(f, "[constraints.resolved_polys.\"{}\"]", p.name)?;
             write!(f, "c = \"")?;
             write!(
                 f,
@@ -379,6 +387,65 @@ impl fmt::Display for DisplayPolysBaseTOML<'_> {
                 }
             )?;
             writeln!(f, "\"")?;
+        }
+
+        Ok(())
+    }
+}
+
+struct ResolvedLookup {
+    name: String,
+    exprs_num: (Vec<Expr<Cell>>, usize),
+}
+
+struct DisplayLookupsBaseTOML<'a> {
+    lookups: &'a Vec<ResolvedLookup>,
+    plaf: &'a Plaf,
+}
+
+impl<'a> From<&'a AnalysisResult> for DisplayLookupsBaseTOML<'a> {
+    fn from(value: &'a AnalysisResult) -> Self {
+        DisplayLookupsBaseTOML {
+            lookups: &value.lookups,
+            plaf: &value.plaf,
+        }
+    }
+}
+
+impl fmt::Display for DisplayLookupsBaseTOML<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let cell_fmt = |f: &mut fmt::Formatter<'_>, c: &Cell| {
+            write!(
+                f,
+                "{}",
+                CellDisplay {
+                    c,
+                    plaf: &self.plaf
+                }
+            )
+        };
+
+        for l in self.lookups {
+            writeln!(
+                f,
+                "[constraints.resolved_lookups.\"{}\"_\"{}\"]",
+                l.exprs_num.1, l.name
+            )?;
+            write!(f, "l = [")?;
+            for (i, exp) in l.exprs_num.0.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
+                }
+                write!(
+                    f,
+                    "{}",
+                    ExprDisplay {
+                        e: &exp,
+                        var_fmt: cell_fmt
+                    },
+                )?;
+            }
+            writeln!(f, "]")?;
         }
 
         Ok(())
