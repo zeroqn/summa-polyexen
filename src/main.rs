@@ -20,6 +20,7 @@ use polyexen::{
         PlafDisplayFixedCSV,
     },
 };
+use serde::Serialize;
 
 mod circuit;
 
@@ -308,8 +309,8 @@ struct AnalysisResult {
 impl AnalysisResult {
     fn write_files(&self, name: &str) -> Result<(), io::Error> {
         if !Path::new("out").exists() {
+            log::debug!("create out dir");
             std::fs::create_dir("out")?;
-            log::debug!("create out dir")
         }
 
         let mut base_file = File::create(format!("out/{}.toml", name))?;
@@ -363,34 +364,56 @@ impl fmt::Display for DisplayPolysBaseTOML<'_> {
             )
         };
 
-        for (c, bound) in self.var_bounds {
-            writeln!(
-                f,
-                "[constraints.resolved_polys.vars.\"{}\"]",
-                CellDisplay {
-                    c,
-                    plaf: &self.plaf,
-                }
-            )?;
-            writeln!(f, "bound = {}", bound)?;
+        #[derive(Default, Serialize)]
+        struct ResolvedPolys {
+            var_bounds: HashMap<String, String>,
+            polys: Vec<String>,
         }
-        writeln!(f)?;
+
+        #[derive(Default, Serialize)]
+        struct Constraints {
+            resolved_polys: ResolvedPolys,
+        }
+
+        #[derive(Default, Serialize)]
+        struct Toml {
+            constraints: Constraints,
+        }
+
+        let mut constraints = Constraints::default();
+
+        for (c, bound) in self.var_bounds {
+            let cell_disp = CellDisplay {
+                c,
+                plaf: &self.plaf,
+            };
+            constraints
+                .resolved_polys
+                .var_bounds
+                .insert(cell_disp.to_string(), bound.to_string());
+        }
 
         for p in self.polys {
-            writeln!(f, "[constraints.resolved_polys.\"{}\"]", p.name)?;
-            write!(f, "c = \"")?;
-            write!(
-                f,
-                "{}",
-                ExprDisplay {
-                    e: &p.expr,
-                    var_fmt: cell_fmt,
-                }
-            )?;
-            writeln!(f, "\"")?;
+            let expr_disp = ExprDisplay {
+                e: &p.expr,
+                var_fmt: cell_fmt,
+            };
+            constraints
+                .resolved_polys
+                .polys
+                .push(format!("{}{}", p.name, expr_disp));
         }
 
-        Ok(())
+        match toml::to_string_pretty(&Toml { constraints }) {
+            Ok(toml_str) => {
+                write!(f, "{}", toml_str)?;
+                Ok(())
+            }
+            Err(err) => {
+                log::error!("serialize constraints polys to toml failed {}", err);
+                Err(fmt::Error)
+            }
+        }
     }
 }
 
@@ -426,29 +449,50 @@ impl fmt::Display for DisplayLookupsBaseTOML<'_> {
             )
         };
 
-        for l in self.lookups {
-            writeln!(
-                f,
-                "[constraints.resolved_lookups.\"{}\"_\"{}\"]",
-                l.exprs_num.1, l.name
-            )?;
-            write!(f, "l = [")?;
-            for (i, exp) in l.exprs_num.0.iter().enumerate() {
-                if i != 0 {
-                    write!(f, ", ")?;
-                }
-                write!(
-                    f,
-                    "{}",
-                    ExprDisplay {
-                        e: &exp,
-                        var_fmt: cell_fmt
-                    },
-                )?;
-            }
-            writeln!(f, "]")?;
+        #[derive(Default, Serialize)]
+        struct ResolvedLookups {
+            lookups: HashMap<String, Vec<String>>,
         }
 
-        Ok(())
+        #[derive(Default, Serialize)]
+        struct Constraints {
+            resolved_lookups: ResolvedLookups,
+        }
+
+        #[derive(Default, Serialize)]
+        struct Toml {
+            constraints: Constraints,
+        }
+
+        let mut constraints = Constraints::default();
+
+        for l in self.lookups {
+            let exprs_num_name = format!("{}_{}", l.exprs_num.1, l.name);
+            let mut exprs = vec![];
+
+            for exp in l.exprs_num.0.iter() {
+                let expr_disp = ExprDisplay {
+                    e: &exp,
+                    var_fmt: cell_fmt,
+                };
+                exprs.push(expr_disp.to_string());
+            }
+
+            constraints
+                .resolved_lookups
+                .lookups
+                .insert(exprs_num_name, exprs);
+        }
+
+        match toml::to_string_pretty(&Toml { constraints }) {
+            Ok(toml_str) => {
+                write!(f, "{}", toml_str)?;
+                Ok(())
+            }
+            Err(err) => {
+                log::error!("serialize constraints lookups to toml failed {}", err);
+                Err(fmt::Error)
+            }
+        }
     }
 }
