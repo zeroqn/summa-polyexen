@@ -22,15 +22,16 @@ use polyexen::{
 };
 use serde::Serialize;
 
-mod circuit;
-
 // Base on https://github.com/ed255/polyexen-demo/blob/main/src/bin/demo.rs
 fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    // let c = circuit::SummaMSTChip::init_empty();
-    let c = summa_solvency::circuits::merkle_sum_tree::MstInclusionCircuit::<4, 2, 4>::init_empty();
-    let k = 12;
+    let c = summa_solvency::circuits::univariate_grand_sum::UnivariateGrandSum::<
+        2,
+        1,
+        summa_solvency::circuits::univariate_grand_sum::UnivariateGrandSumConfig<1, 2>,
+    >::init_empty();
+    let k = 17;
 
     let analysis = do_circuit_analysis(k, &c);
     analysis.write_files("mst").unwrap();

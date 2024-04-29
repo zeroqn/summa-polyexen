@@ -9,7 +9,7 @@ edition = "2021"
 num-bigint = { version = "0.4", features = [ "rand" ] }
 halo2_proofs = { git = "https://github.com/summa-dev/halo2", commit= "8386d6e" }
 polyexen = { path = "./deps/polyexen" }
-summa-solvency = { path = "./circuit/solvency/zk_prover" }
+summa-solvency = { path = "./circuit/solvency/prover" }
 log = "0.4.20"
 env_logger = "0.11.2"
 toml = "0.8.12"

@@ -248,6 +248,7 @@ where
 {
     type Config = CONFIG;
     type FloorPlanner = SimpleFloorPlanner;
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::init_empty()
