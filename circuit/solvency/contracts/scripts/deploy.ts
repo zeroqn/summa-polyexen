@@ -10,21 +10,37 @@ type Deployments = {
 };
 
 async function main() {
+  const verifyingKey = await ethers.deployContract(
+    "src/VerifyingKey.sol:Halo2VerifyingKey"
+  );
+  await verifyingKey.deployed();
+
+  const snarkVerifier = await ethers.deployContract(
+    "src/SnarkVerifier.sol:Verifier"
+  );
+  await snarkVerifier.deployed();
+
+  const grandSumVerifier = await ethers.deployContract(
+    "src/GrandSumVerifier.sol:GrandSumVerifier"
+  );
+  await grandSumVerifier.deployed();
+
   const inclusionVerifier = await ethers.deployContract(
-    "src/InclusionVerifier.sol:Verifier"
+    "src/InclusionVerifier.sol:InclusionVerifier"
   );
   await inclusionVerifier.deployed();
 
-  // The number of levels of the Merkle sum tree
-  const mstLevels = 4;
-  //The number of cryptocurrencies supported by the Merkle sum tree
+  // The number of cryptocurrencies in the balance polynomials
   const currenciesCount = 2;
-  // The number of bytes used to represent the balance of a cryptocurrency in the Merkle sum tree
+  // The number of bytes used to represent the balance of a cryptocurrency in the polynomials
   const balanceByteRange = 8;
   const summa = await ethers.deployContract("Summa", [
+    verifyingKey.address,
+    snarkVerifier.address,
+    grandSumVerifier.address,
     inclusionVerifier.address,
-    mstLevels,
-    currenciesCount,
+    ["ETH", "USDT"], // cryptocurrency names
+    ["ETH", "ETH"],  // cryptocurrency chain
     balanceByteRange,
   ]);
 
@@ -64,7 +80,10 @@ async function main() {
 
   //Copy the ABIs from `artifacts/src/*` to `backend/src/contracts/*`
   copyAbi(fs, "Summa", "Summa");
-  copyAbi(fs, "InclusionVerifier", "Verifier");
+  copyAbi(fs, "VerifyingKey", "Halo2VerifyingKey");
+  copyAbi(fs, "SnarkVerifier", "Verifier");
+  copyAbi(fs, "GrandSumVerifier", "GrandSumVerifier");
+  copyAbi(fs, "InclusionVerifier", "InclusionVerifier");
 }
 
 // We recommend this pattern to be able to use async/await everywhere

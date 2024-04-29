@@ -1,67 +1,46 @@
 import { expect } from "chai";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { ethers } from "hardhat";
-import { Summa } from "../typechain-types";
+import { Summa, Halo2VerifyingKey, Verifier, GrandSumVerifier, InclusionVerifier } from "../typechain-types";
 import { BigNumber } from "ethers";
-import { defaultAbiCoder } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import * as fs from "fs";
 import * as path from "path";
 
 describe("Summa Contract", () => {
-  function submitCommitment(
-    summa: Summa,
-    mstRoot: BigNumber,
-    rootBalances: BigNumber[],
-    cryptocurrencies = [
-      {
-        chain: "ETH",
-        name: "ETH",
-      },
-      {
-        chain: "BTC",
-        name: "BTC",
-      },
-    ]
-  ): any {
-    return summa.submitCommitment(
-      mstRoot,
-      rootBalances,
-      cryptocurrencies,
-      BigNumber.from(1693559255)
-    );
-  }
-
-  function verifyInclusionProof(
-    summa: Summa,
-    inclusionProof: string,
-    leafHash: BigNumber,
-    mstRoot: BigNumber,
-    balance1: BigNumber,
-    balance2: BigNumber
-  ): any {
-    return summa.verifyInclusionProof(
-      inclusionProof,
-      [leafHash, mstRoot, balance1, balance2],
-      1693559255
-    );
-  }
-
   async function deploySummaFixture() {
     // Contracts are deployed using the first signer/account by default
     const [owner, addr1, addr2, addr3]: SignerWithAddress[] =
       await ethers.getSigners();
 
-    const inclusionVerifier = await ethers.deployContract(
-      "src/InclusionVerifier.sol:Verifier"
+    const verifyingKey = await ethers.deployContract(
+      "src/VerifyingKey.sol:Halo2VerifyingKey"
     );
+    await verifyingKey.deployed();
+
+    const snarkVerifier = await ethers.deployContract(
+      "src/SnarkVerifier.sol:Verifier"
+    );
+    await snarkVerifier.deployed();
+
+    const grandSumVerifier = await ethers.deployContract(
+      "src/GrandSumVerifier.sol:GrandSumVerifier"
+    ) as GrandSumVerifier;
+    await grandSumVerifier.deployed();
+
+    const inclusionVerifier = await ethers.deployContract(
+      "src/InclusionVerifier.sol:InclusionVerifier"
+    ) as InclusionVerifier;
     await inclusionVerifier.deployed();
 
     const summa = await ethers.deployContract("Summa", [
+      verifyingKey.address,
+      snarkVerifier.address,
+      grandSumVerifier.address,
       inclusionVerifier.address,
-      4, // The number of levels of the Merkle sum tree
-      2, // The number of cryptocurrencies supported by the Merkle sum tree
-      8, // The number of bytes used to represent the balance of a cryptocurrency in the Merkle sum tree
+      ["ETH", "BTC"],
+      ["ETH", "BTC"],
+      8, // The number of bytes used to represent the balance of a cryptocurrency in the polynomials
     ]);
     await summa.deployed();
 
@@ -73,6 +52,176 @@ describe("Summa Contract", () => {
       addr3,
     };
   }
+
+  describe("deployment tests", () => {
+    let verifyingKey: Halo2VerifyingKey;
+    let snarkVerifier: Verifier;
+    let grandSumVerifier: GrandSumVerifier;
+    let inclusionVerifier: InclusionVerifier;
+
+    beforeEach(async () => {
+      // Deploy the verifying key and verifiers
+      verifyingKey = await ethers.deployContract(
+        "src/VerifyingKey.sol:Halo2VerifyingKey"
+      ) as Halo2VerifyingKey;
+      await verifyingKey.deployed();
+
+      snarkVerifier = await ethers.deployContract(
+        "src/SnarkVerifier.sol:Verifier"
+      ) as Verifier;
+      await snarkVerifier.deployed();
+
+      grandSumVerifier = await ethers.deployContract(
+        "src/GrandSumVerifier.sol:GrandSumVerifier"
+      ) as GrandSumVerifier;
+      await grandSumVerifier.deployed();
+
+      inclusionVerifier = await ethers.deployContract(
+        "src/InclusionVerifier.sol:InclusionVerifier"
+      ) as InclusionVerifier;
+      await inclusionVerifier.deployed();
+    });
+
+    it("should not deploy with invalid currencies", async () => {
+      await expect(
+        ethers.deployContract("Summa", [
+          verifyingKey.address,
+          snarkVerifier.address,
+          grandSumVerifier.address,
+          inclusionVerifier.address,
+          ["", "BTC"],
+          ["ETH", "BTC"],
+          8,
+        ])
+      ).to.be.revertedWith("Invalid cryptocurrency");
+
+      await expect(
+        ethers.deployContract("Summa", [
+          verifyingKey.address,
+          snarkVerifier.address,
+          grandSumVerifier.address,
+          inclusionVerifier.address,
+          ["ETH", "BTC"],
+          ["ETH", ""],
+          8,
+        ])
+      ).to.be.revertedWith("Invalid cryptocurrency");
+
+      await expect(
+        ethers.deployContract("Summa", [
+          verifyingKey.address,
+          snarkVerifier.address,
+          grandSumVerifier.address,
+          inclusionVerifier.address,
+          [],
+          ["ETH", ""],
+          8,
+        ])
+      ).to.be.revertedWith("Cryptocurrency names and chains number mismatch");
+    });
+
+    it("should not deploy with invalid byte range", async () => {
+      await expect(
+        ethers.deployContract("Summa", [
+          verifyingKey.address,
+          snarkVerifier.address,
+          grandSumVerifier.address,
+          inclusionVerifier.address,
+          ["ETH", "BTC"],
+          ["ETH", "BTC"],
+          0, // Invalid byte range
+        ])
+      ).to.be.revertedWith(
+        "The config parameters do not correspond to the verifying key"
+      );
+    });
+
+    it("should not deploy with invalid verification key", async () => {
+      await expect(
+        ethers.deployContract("Summa", [
+          ethers.constants.AddressZero,
+          snarkVerifier.address,
+          grandSumVerifier.address,
+          inclusionVerifier.address,
+          ["ETH", "BTC"],
+          ["ETH", "BTC"],
+          8,
+        ])
+      ).to.be.revertedWith("Invalid verifying key address");
+    });
+
+    it("should not deploy with invalid snark verifier", async () => {
+      const verifyingKey = await ethers.deployContract(
+        "src/VerifyingKey.sol:Halo2VerifyingKey"
+      );
+      await verifyingKey.deployed();
+      await expect(
+        ethers.deployContract("Summa", [
+          verifyingKey.address,
+          ethers.constants.AddressZero,
+          grandSumVerifier.address,
+          inclusionVerifier.address,
+          ["ETH", "BTC"],
+          ["ETH", "BTC"],
+          8,
+        ])
+      ).to.be.revertedWith("Invalid polynomial interpolation verifier address");
+    });
+
+
+    it("should not deploy with invalid grand sum verifier", async () => {
+      const verifyingKey = await ethers.deployContract(
+        "src/VerifyingKey.sol:Halo2VerifyingKey"
+      );
+      await verifyingKey.deployed();
+      await expect(
+        ethers.deployContract("Summa", [
+          verifyingKey.address,
+          snarkVerifier.address,
+          ethers.constants.AddressZero,
+          inclusionVerifier.address,
+          ["ETH", "BTC"],
+          ["ETH", "BTC"],
+          8,
+        ])
+      ).to.be.revertedWith("Invalid grand sum verifier address");
+    });
+
+    it("should not deploy with invalid inclusion verifier", async () => {
+      await expect(
+        ethers.deployContract("Summa", [
+          verifyingKey.address,
+          snarkVerifier.address,
+          grandSumVerifier.address,
+          ethers.constants.AddressZero,
+          ["ETH", "BTC"],
+          ["ETH", "BTC"],
+          8,
+        ])
+      ).to.be.revertedWith("Invalid inclusion verifier address");
+    });
+
+    it("should not deploy if the number of cryptocurrencies is not matching the verification key ", async () => {
+      const dummyVerifyingKey = await ethers.deployContract(
+        "src/DummyVerifyingKey.sol:Halo2VerifyingKey"
+      );
+      await dummyVerifyingKey.deployed();
+
+      await expect(
+        ethers.deployContract("Summa", [
+          dummyVerifyingKey.address,
+          snarkVerifier.address,
+          grandSumVerifier.address,
+          ethers.constants.AddressZero,
+          ["ETH", "BTC"],
+          ["ETH", "BTC"],
+          8,
+        ])
+      ).to.be.revertedWith(
+        "The config parameters do not correspond to the verifying key"
+      );
+    });
+  });
 
   describe("verify address ownership", () => {
     let summa: Summa;
@@ -132,12 +281,12 @@ describe("Summa Contract", () => {
             ownedAddresses[0].chain == "ETH" &&
             ownedAddresses[0].cexAddress == account1.address &&
             ownedAddresses[0].signature ==
-              "0x089b32327d332c295dc3b8873c205b72153211de6dc1c51235782b091cefb9d06d6df2661b86a7d441cd322f125b84901486b150e684221a7b7636eb8182af551b" &&
+            "0x089b32327d332c295dc3b8873c205b72153211de6dc1c51235782b091cefb9d06d6df2661b86a7d441cd322f125b84901486b150e684221a7b7636eb8182af551b" &&
             ownedAddresses[0].message == message &&
             ownedAddresses[1].chain == "ETH" &&
             ownedAddresses[1].cexAddress == account2.address &&
             ownedAddresses[1].signature ==
-              "0xb17a9e25265d3b88de7bfad81e7accad6e3d5612308ff83cc0fef76a34152b0444309e8fc3dea5139e49b6fc83a8553071a7af3d0cfd3fb8c1aea2a4c171729c1c" &&
+            "0xb17a9e25265d3b88de7bfad81e7accad6e3d5612308ff83cc0fef76a34152b0444309e8fc3dea5139e49b6fc83a8553071a7af3d0cfd3fb8c1aea2a4c171729c1c" &&
             ownedAddresses[1].message == message
           );
         });
@@ -223,306 +372,124 @@ describe("Summa Contract", () => {
   });
 
   describe("submit commitment", () => {
-    let mstRoot: BigNumber;
-    let rootBalances: BigNumber[];
+    let rangeCheckSnarkProof: string;
+    let grandSumProof: string;
+    let totalBalances: BigNumber[];
     let summa: Summa;
-    let account1: SignerWithAddress;
-    let account2: SignerWithAddress;
-    //let ethAccount3;
-    let ownedAddresses: Summa.AddressOwnershipProofStruct[];
-    const message = ethers.utils.defaultAbiCoder.encode(
-      ["string"],
-      ["Summa proof of solvency for CryptoExchange"]
-    );
 
     beforeEach(async () => {
       const deploymentInfo = await loadFixture(deploySummaFixture);
       summa = deploymentInfo.summa as Summa;
-      account1 = deploymentInfo.addr1;
-      account2 = deploymentInfo.addr2;
-
-      ownedAddresses = [
-        {
-          chain: "ETH",
-          cexAddress: account1.address.toString(),
-          signature:
-            "0x089b32327d332c295dc3b8873c205b72153211de6dc1c51235782b091cefb9d06d6df2661b86a7d441cd322f125b84901486b150e684221a7b7636eb8182af551b",
-          message: message,
-        },
-        {
-          chain: "ETH",
-          cexAddress: account2.address.toString(),
-          signature:
-            "0xb17a9e25265d3b88de7bfad81e7accad6e3d5612308ff83cc0fef76a34152b0444309e8fc3dea5139e49b6fc83a8553071a7af3d0cfd3fb8c1aea2a4c171729c1c",
-          message: message,
-        },
-      ];
 
       const commitmentCalldataJson = fs.readFileSync(
         path.resolve(
           __dirname,
-          "../../zk_prover/examples/commitment_solidity_calldata.json"
+          "../../prover/bin/commitment_solidity_calldata.json"
         ),
         "utf-8"
       );
       const commitmentCalldata: any = JSON.parse(commitmentCalldataJson);
 
-      mstRoot = commitmentCalldata.root_hash;
-      rootBalances = commitmentCalldata.root_balances;
+      rangeCheckSnarkProof = commitmentCalldata.range_check_snark_proof;
+      grandSumProof = commitmentCalldata.grand_sums_batch_proof;
+      totalBalances = commitmentCalldata.total_balances;
     });
 
-    it("should submit commitment for the given public input", async () => {
-      await summa.submitProofOfAddressOwnership(ownedAddresses);
-
-      await expect(submitCommitment(summa, mstRoot, rootBalances))
-        .to.emit(summa, "LiabilitiesCommitmentSubmitted")
-        .withArgs(
-          BigNumber.from(1693559255),
-          mstRoot,
-          rootBalances,
-          (cryptocurrencies: [Summa.CryptocurrencyStruct]) => {
-            return (
-              cryptocurrencies[0].chain == "ETH" &&
-              cryptocurrencies[0].name == "ETH"
-            );
-          }
-        );
+    it("should submit a valid commitment", async () => {
+      let expect_commitment_on_contract = rangeCheckSnarkProof.slice(0, grandSumProof.length + 128);
+      expect(await summa.commitments(1)).to.be.equal("0x");
+      await summa.submitCommitment(rangeCheckSnarkProof, grandSumProof, totalBalances, 1);
+      expect(await summa.commitments(1)).to.be.equal(expect_commitment_on_contract);
     });
 
-    it("should revert if the caller is not the owner", async () => {
+    it("should revert when the grand sum proof length mismatches with the total balances", async () => {
+
+      let wrong_total_balance = totalBalances.slice(0, totalBalances.length - 1);
       await expect(
-        summa.connect(account2).submitCommitment(
-          mstRoot,
-          [BigNumber.from(1000000000)],
-          [
-            {
-              chain: "ETH",
-              name: "ETH",
-            },
-          ],
-          BigNumber.from(1693559255)
-        )
-      ).to.be.revertedWith("Ownable: caller is not the owner");
+        summa.submitCommitment(rangeCheckSnarkProof, grandSumProof, wrong_total_balance, 1)
+      ).to.be.revertedWith("Invalid grand sum proof length");
+
+      let wrong_grand_sum_proof = grandSumProof.slice(0, grandSumProof.length - 64);
+      await expect(
+        summa.submitCommitment(rangeCheckSnarkProof, wrong_grand_sum_proof, totalBalances, 1)
+      ).to.be.revertedWith("Invalid grand sum proof length");
     });
 
-    it("should revert with invalid root sum", async () => {
-      rootBalances = [BigNumber.from(0), BigNumber.from(0)];
-
-      await summa.submitProofOfAddressOwnership(ownedAddresses);
-
+    it("should revert a snark proof if its length is less than the grand sum proof", async () => {
+      let wrong_range_check_snark_proof = rangeCheckSnarkProof.slice(0, grandSumProof.length - 64);
       await expect(
-        submitCommitment(summa, mstRoot, rootBalances)
-      ).to.be.revertedWith("All root sums should be greater than zero");
+        summa.submitCommitment(wrong_range_check_snark_proof, grandSumProof, totalBalances, 1)
+      ).to.be.revertedWith("Invalid snark proof length");
     });
 
-    it("should revert with invalid cryptocurrencies", async () => {
-      await summa.submitProofOfAddressOwnership(ownedAddresses);
-
+    it("should revert due to an invalid snark proof", async () => {
+      let wrong_range_check_snark_proof = rangeCheckSnarkProof.replace("1", "2");
       await expect(
-        submitCommitment(summa, mstRoot, rootBalances, [
-          {
-            chain: "BTC",
-            name: "BTC",
-          },
-          {
-            chain: "",
-            name: "ETH",
-          },
-        ])
-      ).to.be.revertedWith("Invalid cryptocurrency");
-
-      await expect(
-        submitCommitment(summa, mstRoot, rootBalances, [
-          {
-            chain: "ETH",
-            name: "ETH",
-          },
-          {
-            chain: "BTC",
-            name: "",
-          },
-        ])
-      ).to.be.revertedWith("Invalid cryptocurrency");
-    });
-
-    it("should not submit invalid root", async () => {
-      await expect(
-        submitCommitment(summa, BigNumber.from(0), rootBalances)
-      ).to.be.revertedWith("Invalid MST root");
-    });
-
-    it("should revert if cryptocurrency and liability counts don't match", async () => {
-      rootBalances = [BigNumber.from(10000000)];
-      await expect(
-        submitCommitment(summa, mstRoot, rootBalances)
-      ).to.be.revertedWith(
-        "Root liabilities sums and liabilities number mismatch"
-      );
+        summa.submitCommitment(wrong_range_check_snark_proof, grandSumProof, totalBalances, 1)
+      ).to.be.reverted;
     });
   });
 
-  describe("verify proof of inclusion", () => {
-    let commitmentMstRoot: BigNumber;
-    let rootBalances: BigNumber[];
-    let inclusionMstRoot: BigNumber;
-    let leafHash: BigNumber;
-    let balance1: BigNumber;
-    let balance2: BigNumber;
-    let summa: Summa;
-    let account1: SignerWithAddress;
-    let account2: SignerWithAddress;
+  describe("verify inclusion proof", () => {
+    let rangeCheckSnarkProof: string;
     let inclusionProof: string;
-    let ownedAddresses: Summa.AddressOwnershipProofStruct[];
-    const message = ethers.utils.defaultAbiCoder.encode(
-      ["string"],
-      ["Summa proof of solvency for CryptoExchange"]
-    );
+    let challenges: BigNumber[];
+    let values: BigNumber[];
+    let summa: Summa;
 
     beforeEach(async () => {
       const deploymentInfo = await loadFixture(deploySummaFixture);
       summa = deploymentInfo.summa as Summa;
-      account1 = deploymentInfo.addr1;
-      account2 = deploymentInfo.addr2;
-
-      ownedAddresses = [
-        {
-          chain: "ETH",
-          cexAddress: defaultAbiCoder.encode(["address"], [account1.address]),
-          signature:
-            "0x089b32327d332c295dc3b8873c205b72153211de6dc1c51235782b091cefb9d06d6df2661b86a7d441cd322f125b84901486b150e684221a7b7636eb8182af551b",
-          message: message,
-        },
-        {
-          chain: "ETH",
-          cexAddress: defaultAbiCoder.encode(["address"], [account2.address]),
-          signature:
-            "0xb17a9e25265d3b88de7bfad81e7accad6e3d5612308ff83cc0fef76a34152b0444309e8fc3dea5139e49b6fc83a8553071a7af3d0cfd3fb8c1aea2a4c171729c1c",
-          message: message,
-        },
-      ];
-
-      const inclusionJson = fs.readFileSync(
-        path.resolve(
-          __dirname,
-          "../../zk_prover/examples/inclusion_proof_solidity_calldata.json"
-        ),
-        "utf-8"
-      );
-      const inclusionCalldata: any = JSON.parse(inclusionJson);
-
-      inclusionProof = inclusionCalldata.proof;
-      leafHash = inclusionCalldata.public_inputs[0];
-      inclusionMstRoot = inclusionCalldata.public_inputs[1];
-      balance1 = inclusionCalldata.public_inputs[2];
-      balance2 = inclusionCalldata.public_inputs[3];
 
       const commitmentCalldataJson = fs.readFileSync(
         path.resolve(
           __dirname,
-          "../../zk_prover/examples/commitment_solidity_calldata.json"
+          "../../prover/bin/commitment_solidity_calldata.json"
         ),
         "utf-8"
       );
       const commitmentCalldata: any = JSON.parse(commitmentCalldataJson);
 
-      commitmentMstRoot = commitmentCalldata.root_hash;
-      rootBalances = commitmentCalldata.root_balances;
+      rangeCheckSnarkProof = commitmentCalldata.range_check_snark_proof;
+      const grandSumProof = commitmentCalldata.grand_sums_batch_proof;
+      const totalBalances = commitmentCalldata.total_balances;
+
+      const inclusionCalldataJson = fs.readFileSync(
+        path.resolve(
+          __dirname,
+          "../../prover/bin/inclusion_proof_solidity_calldata.json"
+        ),
+        "utf-8"
+      );
+      const inclusionCalldata: any = JSON.parse(inclusionCalldataJson);
+
+      await summa.submitCommitment(rangeCheckSnarkProof, grandSumProof, totalBalances, 1);
+
+      inclusionProof = inclusionCalldata.proof;
+      challenges = inclusionCalldata.challenges;
+      values = inclusionCalldata.user_values;
     });
 
-    it("should verify the proof of inclusion for the given public input", async () => {
-      await summa.submitProofOfAddressOwnership(ownedAddresses);
-      await submitCommitment(summa, commitmentMstRoot, rootBalances);
-      expect(
-        await verifyInclusionProof(
-          summa,
-          inclusionProof,
-          leafHash,
-          inclusionMstRoot,
-          balance1,
-          balance2
-        )
-      ).to.be.equal(true);
+    // Testing verifyInclusionProof function
+    it("should verify inclusion proof with `verifyInclusionProof` function", async () => {
+      expect(await summa.verifyInclusionProof(1, inclusionProof, challenges, values)).to.be.true;
     });
 
-    it("should not verify with invalid MST root", async () => {
-      await summa.submitProofOfAddressOwnership(ownedAddresses);
-      await submitCommitment(summa, commitmentMstRoot, rootBalances);
-      inclusionMstRoot = BigNumber.from(0);
-      await expect(
-        verifyInclusionProof(
-          summa,
-          inclusionProof,
-          leafHash,
-          inclusionMstRoot,
-          balance1,
-          balance2
-        )
-      ).to.be.revertedWith("Invalid MST root");
+    it("should not verify inclusion proof with wrong snark proof", async () => {
+      // No commitment is submitted at timestamp 2
+      await expect(summa.verifyInclusionProof(2, inclusionProof, challenges, values)).to.be.reverted;
     });
 
-    it("should not verify if the MST root lookup by timestamp returns an incorrect MST root", async () => {
-      // The lookup will return a zero MST root as no MST root has been stored yet
-      await expect(
-        verifyInclusionProof(
-          summa,
-          inclusionProof,
-          leafHash,
-          inclusionMstRoot,
-          balance1,
-          balance2
-        )
-      ).to.be.revertedWith("Invalid MST root");
+    it("should not verify inclusion proof with wrong challenge points", async () => {
+      let wrongChallenges = challenges.slice(0, challenges.length - 1);
+
+      await expect(summa.verifyInclusionProof(1, inclusionProof, wrongChallenges, values)).to.be.revertedWith("Invalid challenges length");
     });
 
-    it("should not verify with invalid root balances", async () => {
-      balance1 = BigNumber.from(0);
+    it("should not verify inclusion proof with value length mismatches with config", async () => {
+      let wrongValues = values.slice(0, values.length - 1);
 
-      await summa.submitProofOfAddressOwnership(ownedAddresses);
-      await submitCommitment(summa, commitmentMstRoot, rootBalances);
-      await expect(
-        verifyInclusionProof(
-          summa,
-          inclusionProof,
-          leafHash,
-          inclusionMstRoot,
-          balance1,
-          balance2
-        )
-      ).to.be.revertedWith("Invalid root balance");
-    });
-
-    it("should not verify with invalid leaf", async () => {
-      leafHash = BigNumber.from(0);
-
-      await summa.submitProofOfAddressOwnership(ownedAddresses);
-      await submitCommitment(summa, commitmentMstRoot, rootBalances);
-      await expect(
-        verifyInclusionProof(
-          summa,
-          inclusionProof,
-          leafHash,
-          inclusionMstRoot,
-          balance1,
-          balance2
-        )
-      ).to.be.revertedWith("Invalid inclusion proof");
-    });
-
-    it("should not verify with invalid proof", async () => {
-      inclusionProof = inclusionProof.replace("1", "2");
-
-      await summa.submitProofOfAddressOwnership(ownedAddresses);
-      await submitCommitment(summa, commitmentMstRoot, rootBalances);
-      await expect(
-        verifyInclusionProof(
-          summa,
-          inclusionProof,
-          leafHash,
-          inclusionMstRoot,
-          balance1,
-          balance2
-        )
-      ).to.be.revertedWith("Invalid inclusion proof");
+      await expect(summa.verifyInclusionProof(1, inclusionProof, challenges, wrongValues)).to.be.revertedWith("Values length mismatch with config");
     });
   });
 });
