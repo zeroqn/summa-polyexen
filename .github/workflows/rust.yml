@@ -46,18 +46,10 @@ jobs:
       - name: Install solc
         run: (hash svm 2>/dev/null || cargo install --version 0.2.23 svm-rs) && svm install 0.8.20 && solc --version
 
-      - name: Test Zk Prover
+      - name: Test KZG Prover
         run: |
-          cd zk_prover
-          cargo test --release --features dev-graph -- --nocapture
-
-      - name: Test Zk Prover examples
-        run: |
-          cd zk_prover
-          cargo run --release --example gen_inclusion_verifier
-          cargo run --release --example gen_commitment
-          cargo run --release --example gen_inclusion_proof
-          cargo run --release --example nova_incremental_verifier
+          cd prover
+          cargo test --release -- --nocapture
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -67,7 +59,7 @@ jobs:
           cd backend
           cargo test --release -- --nocapture
 
-      - name: Test backend example
+      - name: Test example
         run: |
           cd backend
           cargo run --release --example summa_solvency_flow

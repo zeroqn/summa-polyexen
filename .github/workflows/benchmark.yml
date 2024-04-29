@@ -8,9 +8,6 @@ on:
         required: true
         default: 'no'
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   wakeup:
     runs-on: ubuntu-latest
@@ -18,7 +15,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-
     steps:
       - uses: actions/checkout@v3
 
@@ -39,13 +35,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Run Benchmark
+      - name: Run Benchmark Tests
         run: |
-          cd zk_prover
+          cd prover
           cargo bench
 
       - name: Upload Benchmark Results
         uses: actions/upload-artifact@v2
         with:
           name: benchmark-results
-          path: zk_prover/target/criterion
+          path: prover/target/criterion
